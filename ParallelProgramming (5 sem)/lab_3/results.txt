@@ -1,0 +1,23 @@
+Используется 1 потоков.
+Solution found after 2 iterations with residual norm 0.000000302680.
+Время выполнения: 54.848927 секунд
+
+Используется 2 потоков.
+Solution found after 2 iterations with residual norm 0.000000018917.
+Время выполнения: 34.171449 секунд
+
+Используется 3 потоков.
+Solution found after 2 iterations with residual norm 0.000000093132.
+Время выполнения: 27.469479 секунд
+
+Используется 4 потоков.
+Solution found after 2 iterations with residual norm 0.000000349398.
+Время выполнения: 23.626317 секунд
+
+спользуется 8 потоков.
+Solution found after 2 iterations with residual norm 0.000000087387.
+Время выполнения: 25.834463 секунд
+
+Используется 16 потоков.
+Solution found after 2 iterations with residual norm 0.000000093132.
+Время выполнения: 24.351797 секунд

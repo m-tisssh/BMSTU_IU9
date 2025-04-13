@@ -1,0 +1,174 @@
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+const (
+	rows    = 10 // Размеры матрицы
+	cols    = 10
+	steps   = 100 // Количество шагов моделирования
+	nThreads = 4 // Количество потоков
+)
+
+type Barrier struct {
+	sync.Mutex
+	cond *sync.Cond
+	count int
+	limit int
+}
+
+// Создание нового барьера
+func NewBarrier(limit int) *Barrier {
+	b := &Barrier{
+		limit: limit,
+	}
+	b.cond = sync.NewCond(&b.Mutex)
+	return b
+}
+
+// Метод ожидания синхронизации
+func (b *Barrier) Wait() {
+	b.Lock()
+	defer b.Unlock()
+	b.count++
+	if b.count == b.limit {
+		b.count = 0
+		b.cond.Broadcast()
+	} else {
+		b.cond.Wait()
+	}
+}
+
+// Функция для подсчета живых соседей с учетом тороидальных границ
+func countLiveNeighbors(grid [][]int, x, y int) int {
+	dirs := [][2]int{
+		{-1, -1}, {-1, 0}, {-1, 1},
+		{0, -1},         {0, 1},
+		{1, -1}, {1, 0}, {1, 1},
+	}
+	count := 0
+	for _, dir := range dirs {
+		nx, ny := (x+dir[0]+rows)%rows, (y+dir[1]+cols)%cols
+		count += grid[nx][ny]
+	}
+	return count
+}
+
+// Эволюция для заданной полосы матрицы
+func evolve(startRow, endRow int, grid, newGrid [][]int, barrier *Barrier, stepChan chan<- [][]int) {
+	for step := 0; step < steps; step++ {
+		for i := startRow; i < endRow; i++ {
+			for j := 0; j < cols; j++ {
+				liveNeighbors := countLiveNeighbors(grid, i, j)
+				if grid[i][j] == 1 {
+					if liveNeighbors < 2 || liveNeighbors > 3 {
+						newGrid[i][j] = 0 // Умирает
+					} else {
+						newGrid[i][j] = 1 // Выживает
+					}
+				} else {
+					if liveNeighbors == 3 {
+						newGrid[i][j] = 1 // Оживает
+					} else {
+						newGrid[i][j] = 0 // Остается пустой
+					}
+				}
+			}
+		}
+		// Барьерная синхронизация
+		barrier.Wait()
+
+		// Копирование новой матрицы в текущую
+		for i := startRow; i < endRow; i++ {
+			copy(grid[i], newGrid[i])
+		}
+		barrier.Wait()
+
+		// Отправка текущего состояния для вывода
+		if stepChan != nil && startRow == 0 {
+			copyGrid := make([][]int, rows)
+			for i := range grid {
+				copyGrid[i] = append([]int{}, grid[i]...)
+			}
+			stepChan <- copyGrid
+		}
+	}
+}
+
+// Печать матрицы
+func printGrid(grid [][]int) {
+	for _, row := range grid {
+		for _, cell := range row {
+			fmt.Printf("%d ", cell)
+		}
+		fmt.Println()
+	}
+	fmt.Println()
+}
+
+func main() {
+	// Задаем начальную матрицу вручную
+	grid := [][]int{
+		{0, 1, 0, 0, 1, 0, 1, 0, 0, 1},
+		{1, 0, 1, 1, 0, 1, 0, 1, 1, 0},
+		{0, 1, 0, 0, 1, 0, 1, 0, 0, 1},
+		{1, 0, 1, 1, 0, 1, 0, 1, 1, 0},
+		{0, 1, 0, 0, 1, 0, 1, 0, 0, 1},
+		{1, 0, 1, 1, 0, 1, 0, 1, 1, 0},
+		{0, 1, 0, 0, 1, 0, 1, 0, 0, 1},
+		{1, 0, 1, 1, 0, 1, 0, 1, 1, 0},
+		{0, 1, 0, 0, 1, 0, 1, 0, 0, 1},
+		{1, 0, 1, 1, 0, 1, 0, 1, 1, 0},
+	}
+	newGrid := make([][]int, rows)
+	for i := range newGrid {
+		newGrid[i] = make([]int, cols)
+	}
+
+	fmt.Println("Начальная матрица:")
+	printGrid(grid)
+
+	barrier := NewBarrier(nThreads)
+	var wg sync.WaitGroup
+	rowsPerThread := rows / nThreads
+
+	// Канал для передачи шагов эволюции
+	stepChan := make(chan [][]int, steps)
+
+	start := time.Now()
+
+	// Запуск потоков
+	for t := 0; t < nThreads; t++ {
+		startRow := t * rowsPerThread
+		endRow := startRow + rowsPerThread
+		if t == nThreads-1 {
+			endRow = rows // Последний поток может обрабатывать больше строк
+		}
+		wg.Add(1)
+		go func(startRow, endRow int) {
+			defer wg.Done()
+			evolve(startRow, endRow, grid, newGrid, barrier, stepChan)
+		}(startRow, endRow)
+	}
+
+	// Чтение и вывод состояния шагов эволюции
+	go func() {
+		for step := 0; step < steps; step++ {
+			currentGrid := <-stepChan
+			fmt.Printf("Шаг %d:\n", step+1)
+			printGrid(currentGrid)
+		}
+		close(stepChan)
+	}()
+
+	wg.Wait()
+	elapsed := time.Since(start)
+	fmt.Printf("Среднее время выполнения одного шага: %v\n", elapsed/time.Duration(steps))
+
+	// Печать итоговой матрицы
+	fmt.Println("Итоговая матрица после эволюции:")
+	printGrid(grid)
+}
